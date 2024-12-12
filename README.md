@@ -1,4 +1,4 @@
-# .github Repository for Containerly
+# Organization Repository for GitHub Community Health Files
 
 This repository serves as a centralized location for community health files and configurations that apply to all repositories within the **[Your Organization Name]** GitHub organization.
 
