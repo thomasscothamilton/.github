@@ -1,0 +1,125 @@
+name: Auto Tag and Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main  # Adjust to your default branch
+
+jobs:
+  auto-tag-and-release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Ensure all tags are fetched
+
+    - name: Get PR labels
+      id: get_labels
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const labels = await github.rest.issues.listLabelsOnIssue({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.payload.pull_request.number,
+          });
+          core.setOutput('labels', labels.data.map(label => label.name).join(','));
+
+    - name: Determine version bump
+      id: determine_bump
+      run: |
+        labels="${{ steps.get_labels.outputs.labels }}"
+        echo "Labels: $labels"
+        if [[ $labels == *"major"* ]]; then
+          echo "Version bump: major"
+          echo "::set-output name=bump_type::major"
+        elif [[ $labels == *"minor"* ]]; then
+          echo "Version bump: minor"
+          echo "::set-output name=bump_type::minor"
+        elif [[ $labels == *"patch"* ]]; then
+          echo "Version bump: patch"
+          echo "::set-output name=bump_type::patch"
+        else
+          echo "::error::No version bump label (major, minor, patch) found. Failing the workflow."
+          exit 1
+        fi
+
+    - name: Get latest tag
+      id: get_latest_tag
+      run: |
+        git fetch --tags
+        latest_tag=$(git tag --sort=-v:refname | head -n 1)
+        if [ -z "$latest_tag" ]; then
+          latest_tag="v0.0.0"
+        fi
+        echo "Latest tag: $latest_tag"
+        echo "::set-output name=latest_tag::$latest_tag"
+
+    - name: Bump version
+      id: bump_version
+      run: |
+        bump_type="${{ steps.determine_bump.outputs.bump_type }}"
+        latest_tag="${{ steps.get_latest_tag.outputs.latest_tag }}"
+        echo "Latest tag: $latest_tag"
+        echo "Bump type: $bump_type"
+        # Remove 'v' prefix if present
+        latest_tag="${latest_tag#v}"
+        IFS='.' read -r major minor patch <<< "$latest_tag"
+        major=${major:-0}
+        minor=${minor:-0}
+        patch=${patch:-0}
+        if [ "$bump_type" == "major" ]; then
+          major=$((major + 1))
+          minor=0
+          patch=0
+        elif [ "$bump_type" == "minor" ]; then
+          minor=$((minor + 1))
+          patch=0
+        elif [ "$bump_type" == "patch" ]; then
+          patch=$((patch + 1))
+        fi
+        new_version="$major.$minor.$patch"
+        new_tag="v$new_version"
+        echo "New version: $new_version"
+        echo "::set-output name=new_version::$new_version"
+        echo "::set-output name=new_tag::$new_tag"
+
+    - name: Create tag
+      run: |
+        git config user.name "${{ github.actor }}"
+        git config user.email "${{ github.actor }}@users.noreply.github.com"
+        git tag ${{ steps.bump_version.outputs.new_tag }}
+        git push origin ${{ steps.bump_version.outputs.new_tag }}
+
+    - name: Create GitHub Release
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const newTag = '${{ steps.bump_version.outputs.new_tag }}';
+          const newVersion = '${{ steps.bump_version.outputs.new_version }}';
+          const releaseNotes = `\${{ steps.generate_notes.outputs.release_notes }}`;
+          const releaseResponse = await github.rest.repos.createRelease({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            tag_name: newTag,
+            name: `Release ${newVersion}`,
+            body: releaseNotes,
+            draft: false,
+            prerelease: false,
+          });
+          core.setOutput('release_url', releaseResponse.data.html_url);
+    # - name: Create GitHub Release
+    #   uses: actions/create-release@v1
+    #   with:
+    #     tag_name: ${{ steps.bump_version.outputs.new_tag }}
+    #     release_name: Release ${{ steps.bump_version.outputs.new_version }}
+    #     body: |
+    #       Auto-generated release based on label **${{ steps.determine_bump.outputs.bump_type }}**.
+    #     draft: false
+    #     prerelease: false
+    #   env:
+    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
