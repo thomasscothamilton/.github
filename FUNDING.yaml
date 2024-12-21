@@ -1,8 +1,10 @@
 # Funding platforms
 
 github: [your-org]  # Replace with your GitHub Sponsors handle
-patreon: your-patreon-username
-open_collective: your-open-collective-username
-ko_fi: your-kofi-username
-tidelift: your-tidelift-username
+patreon: thomasscothamilton
+open_collective: thomasscothamilton
+ko_fi: thomasscothamilton
+liberapay: thomasscothamilton
+buy_me_a_coffee: thomasscothamilton
+thanks_dev: u/gh/thomasscothamilton
 custom: ['https://your-custom-funding-page.com']
